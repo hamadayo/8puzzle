@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            margin: 1em;
+            display: flex;
+            flex-direction: column;
+            font-size: 5vh;
+        }
+
+        .board {
+            display: grid;
+            grid-template-rows: 12vh 12vh 12vh;
+            grid-template-columns: 12vh 12vh 12vh;
+            justify-self: center;   /* 横方向中央揃え */
+            align-self: center;     /* 縦方向中央揃え */
+        }
+
+        .cell {
+            position: relative;
+            background-size: cover;
+            background-position: center;
+            font-size: 0;
+            border: 0.1px solid black;
+        }
+        
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #btnStart {
+            font-family: 'Courier Prime', monospace;
+            width: 36vh;
+            padding: 1em;
+            font-size: 2vh;
+            visibility: visible;
+            font-weight: bold;
+        }
+
+        #btnAuto,
+        #btnAutoAStar,
+        #btnStop,
+        #btnReturn,
+        #btnAutoBFS,
+        #btnAutoDFS {
+            font-family: 'Courier Prime', monospace;
+            width: 36vh;
+            padding: 1em;
+            font-size: 2vh;
+            visibility: hidden;
+            font-weight: bold;
+        }
+
+        .message {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+    <script>
+        let cells = null;       // セル配列
+        let mode;
+        let autoInterval; // Autoボタン用のインターバル
+
+        const WAIT = Symbol();  // 待機
+        const GAME = Symbol();  // ゲーム中
+
+        // セルを入れ替える
+        function swapCell(x, y) {
+            console.log("入れ替え.");
+            [cells[x].textContent, cells[y].textContent] = [cells[y].textContent, cells[x].textContent];
+            [cells[x].style.backgroundImage, cells[y].style.backgroundImage] = [cells[y].style.backgroundImage, cells[x].style.backgroundImage];
+            // クリアしたか？
+            checkClear();
+        }
+
+        // セルが入れ替え可能かチェックする
+        function checkCell(number) {
+            if (number >= 3 && cells[number - 3].textContent === "") {    // 上と入れ替え
+                swapCell(number, number - 3);
+            }
+            if (number <= 5 && cells[number + 3].textContent === "") {    // 下と入れ替え
+                swapCell(number, number + 3);
+            }
+            if (number % 3 !== 2 && cells[number + 1].textContent === "") {    // 右と入れ替え
+                swapCell(number, number + 1);
+            }
+            if (number % 3 !== 0 && cells[number - 1].textContent === "") {    // 左と入れ替え
+                swapCell(number, number - 1);
+            }
+        }
+
+        // クリアしたか？
+        function checkClear() {
+            if (mode === GAME) {
+                // 1~8に並んでいるか？
+                let i = 0;
+                for (; i < cells.length; i++) {
+                    let value = Number(cells[i].textContent);
+                    console.log("textContent: " + value);
+                    if (value !== (i + 1)) break;
+                }
+                // 並んでいればクリア！
+                if (i === 8) {
+                    mode = WAIT;
+                    document.querySelector(".message").textContent = "CLEAR!!";
+                    clearInterval(autoInterval); // クリア時にAutoの動作を停止
+                }
+            }
+        }
+
+        // 起動時の処理
+        window.addEventListener("load", () => {
+            // ゲームの状態
+            mode = WAIT;
+
+            // 9つのセルを取得
+            cells = document.querySelectorAll(".cell");
+
+            // セルのイベントを設定
+            for (let cell of cells) {
+                cell.addEventListener("click", (e) => {
+                    // セルの番号を取得（data-numberプロパティ）
+                    const number = Number(e.currentTarget.dataset.number);
+                    console.log("cells[" + number + "] Click.");
+
+                    // セルが入れ替え可能か？
+                    checkCell(number);
+                }, false);
+            }
+
+            // スタートボタン
+            const btnStart = document.getElementById("btnStart");
+            // Autoボタン
+            const btnAuto = document.getElementById("btnAuto");
+            // AutoAStarボタン
+            const btnAutoAStar = document.getElementById("btnAutoAStar");
+            const btnStop = document.getElementById("btnStop");
+            const btnReturn = document.getElementById("btnReturn");
+            const btnAutoBFS = document.getElementById("btnAutoBFS");
+            const btnAutoDFS = document.getElementById("btnAutoDFS");
+
+            btnAutoBFS.addEventListener("click", () => {
+                document.querySelector(".message").textContent = "BFS"
+                autoSolveBFS()
+            });
+
+            btnAutoDFS.addEventListener("click", () => {
+                document.querySelector(".message").textContent = "DFS"
+                autoSolveDFS()
+            });
+
+            btnReturn.addEventListener("click", () => {
+                document.querySelector(".message").textContent = ""
+                btnStart.style.visibility = "visible";
+                btnAuto.style.visibility = "hidden";
+                btnAutoAStar.style.visibility = "hidden";
+                btnStop.style.visibility = "hidden";
+                btnReturn.style.visibility = "hidden";
+                btnAutoDFS.style.visibility = "hidden";
+                btnAutoBFS.style.visibility = "hidden";
+                clearInterval(autoInterval);
+            });
+
+            btnStop.addEventListener("click", () => {
+                document.querySelector(".message").textContent = "Stop";
+                clearInterval(autoInterval); //動作を停止
+            });
+
+            btnAutoAStar.addEventListener("click", () => {
+                document.querySelector(".message").textContent = "AutoAStar";
+                autoSolveAStar();
+            });
+
+            btnAuto.addEventListener("click", () => {
+                document.querySelector(".message").textContent = "Auto";
+
+                // インターバル設定
+                autoInterval = setInterval(() => {
+                    const r = Math.floor(Math.random() * 9);
+                    checkCell(r);
+                    checkClear();
+                }, 200);
+            });
+        
+            btnStart.addEventListener("click", () => {
+                const shuffleOption = confirm("シャッフルしますか？\n「OK」でシャッフル、キャンセルで現在の盤面から始めます。");
+
+                document.querySelector(".message").textContent = shuffleOption ? "シャッフル開始" : "現在の盤面から開始";
+
+                // シャッフルまたは現在の盤面からゲームを開始
+                startGame(shuffleOption);
+                btnStart.style.visibility = "hidden";
+                btnAuto.style.visibility = "visible";
+                btnAutoAStar.style.visibility = "visible";
+                btnStop.style.visibility = "visible";
+                btnReturn.style.visibility = "visible";
+                btnAutoBFS.style.visibility = "visible";
+                btnAutoDFS.style.visibility = "visible";
+            }, false);
+        });
+
+        // ゲーム開始処理
+        function startGame(shuffle) {
+            // シャッフルする場合
+            if (shuffle) {
+                shuffleBoard();
+            }
+
+            // ゲーム開始
+            mode = GAME;
+        }
+
+        // シャッフル処理
+        function shuffleBoard() {
+            // シャッフル
+            for (let i = 0; i < 1000; i++) {
+                const r = Math.floor(Math.random() * 9);
+                checkCell(r);
+            }
+        }
+
+        function AStarSolver(initialState) {
+        class Node {
+            constructor(board, pre = null, action = null) {
+                this.board = board;
+                this.edgeLength = Math.sqrt(board.length);
+                this.pre = pre;
+                this.action = action;
+                this.cost = pre ? pre.cost + 1 : 0;
+                this.heuristic = this.getHeuristic();
+                this.score = this.cost + this.heuristic;
+            }
+
+            getHeuristic() {
+                let ret = 0;
+                for (let i = 0; i < this.edgeLength; i++) {
+                    for (let j = 0; j < this.edgeLength; j++) {
+                        const t = this.board[i * this.edgeLength + j] - 1;
+                        const target = t === -1 ? this.board.length - 1 : t;
+                        const targetI = Math.floor(target / this.edgeLength);
+                        const targetJ = target % this.edgeLength;
+                        ret += Math.abs(i - targetI) + Math.abs(j - targetJ);
+                    }
+                }
+                return ret;
+            }
+        }
+
+        function isSameBoard(board1) {
+            // 解の配置を定義
+            const solution = [1, 2, 3, 4, 5, 6, 7, 8, 0]; // 0 は空白として扱う
+
+        // ソートして比較
+            return board1.join() === solution.join();
+        }
+
+        function isBoardInClosedList(board, closedList) {
+            return closedList.some(node => isSameBoard(node.board, board));
+        }
+
+        function isBoardInOpenList(board, openList) {
+            return openList.some(node => isSameBoard(node.board, board));
+        }
+
+        function getNodeWithLowestScore(openList) {
+            return openList.reduce((minNode, currentNode) => (currentNode.score < minNode.score ? currentNode : minNode), openList[0]);
+        }
+
+        function getNeighbors(node) {
+            const neighbors = [];
+            const emptyIndex = node.board.indexOf(0);
+            console.log(emptyIndex)
+
+            function isValidMove(i, j) {
+                return i >= 0 && i < node.edgeLength && j >= 0 && j < node.edgeLength;
+            }
+
+            const emptyI = Math.floor(emptyIndex / node.edgeLength);
+            const emptyJ = emptyIndex % node.edgeLength;
+
+            const directions = [
+                { di: -1, dj: 0 }, // 上
+                { di: 1, dj: 0 },  // 下
+                { di: 0, dj: -1 }, // 左
+                { di: 0, dj: 1 }   // 右
+            ];
+
+            for (const dir of directions) {
+                const newI = emptyI + dir.di;
+                const newJ = emptyJ + dir.dj;
+
+                if (isValidMove(newI, newJ)) {
+                    const neighborBoard = [...node.board];
+                    const newIndex = newI * node.edgeLength + newJ;
+                    [neighborBoard[emptyIndex], neighborBoard[newIndex]] = [neighborBoard[newIndex], neighborBoard[emptyIndex]];
+                    neighbors.push(new Node(neighborBoard, node, dir));
+                }
+            }
+
+            return neighbors;
+        }
+
+        const startNode = new Node(initialState);
+        const openList = [startNode];
+        console.log(openList[0])
+        const closedList = [];
+        let searchCount = 0;
+
+        while (openList.length > 0) {
+            const currentNode = getNodeWithLowestScore(openList);
+
+            if (isSameBoard(currentNode.board)) {
+                // 解が見つかった
+                const actions = [];
+                let backtraceNode = currentNode;
+                console.log(backtraceNode.pre);
+                while (backtraceNode.pre) {
+                    actions.unshift(backtraceNode.action);
+                    console.log(actions);
+                    backtraceNode = backtraceNode.pre;
+                }
+                return { solved: true, actions, searchCount };
+            }
+
+            openList.splice(openList.indexOf(currentNode), 1);
+            console.log(openList)
+            closedList.push(currentNode);
+            console.log(closedList)
+
+            if (searchCount > 10000) {
+                // サーチ回数が閾値を超えた場合、解が見つからないことを示すために変更
+                return { solved: false, actions: [], searchCount };
+            }
+            const neighbors = getNeighbors(currentNode);
+            for (const neighbor of neighbors) {
+                searchCount++;
+                if (isBoardInClosedList(neighbor.board, closedList)) {
+                    continue;
+                }
+
+                const existingNode = openList.find(node => isSameBoard(node.board, neighbor.board));
+
+                if (!existingNode || neighbor.cost < existingNode.cost) {
+                    openList.push(neighbor);
+                }
+            }
+        }
+
+        return { solved: false, actions: [], searchCount };
+    }
+
+          // Function to perform a sequence of actions on the puzzle
+        function performActions(actions) {
+        actions.forEach(action => {
+            const emptyCellIndex = Array.from(cells).findIndex(cell => cell.textContent === "");
+            const targetIndex = getTargetIndex(emptyCellIndex, action);
+
+            swapCell(emptyCellIndex, targetIndex);
+        });
+        }
+
+        // Function to get the target index based on the action
+        function getTargetIndex(emptyIndex, action) {
+            const edgeLength = Math.sqrt(cells.length);
+            const [i, j] = [Math.floor(emptyIndex / edgeLength), emptyIndex % edgeLength];
+
+            if (action.di === -1) return (i - 1) * edgeLength + j;     // Up
+            if (action.di === 1) return (i + 1) * edgeLength + j;      // Down
+            if (action.dj === -1) return i * edgeLength + (j - 1);     // Left
+            if (action.dj === 1) return i * edgeLength + (j + 1);      // Right
+
+            return emptyIndex;  // Should not happen
+        }
+
+        function autoSolveAStar() {
+
+            clearInterval(autoInterval); // 他の自動動作が実行中であれば停止
+
+            const initialState = Array.from(cells, cell => parseInt(cell.textContent) || 0);
+
+            const { solved, actions, searchCount } = AStarSolver(initialState);
+
+            if (solved) {
+                mode = WAIT;
+                document.querySelector(".message").textContent = "A* 解けました!!";
+                console.log(`A* found a solution in ${searchCount} steps.`);
+
+                let step = 0;
+
+                autoInterval = setInterval(() => {
+                    if (step < actions.length) {
+                        const action = actions[step];
+                        const emptyCellIndex = Array.from(cells).findIndex(cell => cell.textContent === "");
+                        const targetIndex = getTargetIndex(emptyCellIndex, action);
+                        swapCell(emptyCellIndex, targetIndex);
+                        step++;
+                    } else {
+                        clearInterval(autoInterval); // Stop the interval when all steps are completed
+                    }
+                }, 500);
+            } else {
+                document.querySelector(".message").textContent = `この盤面は解けません`;
+                console.log(`A* did not find a solution after ${searchCount} steps.`);
+            }
+        }
+
+
+        function autoSolveBFS() {
+        clearInterval(autoInterval); // 他の自動動作が実行中であれば停止
+
+        const initialState = Array.from(cells, cell => parseInt(cell.textContent) || 0);
+
+        const { solved, actions, searchCount } = breadthFirstSearch(initialState);
+
+        if (solved) {
+            mode = WAIT;
+            document.querySelector(".message").textContent = "BFS 解けました!!";
+            console.log(`BFS found a solution in ${searchCount} steps.`);
+
+            let step = 0;
+
+            autoInterval = setInterval(() => {
+                if (step < actions.length) {
+                    const action = actions[step];
+                    const emptyCellIndex = Array.from(cells).findIndex(cell => cell.textContent === "");
+                    const targetIndex = getTargetIndex(emptyCellIndex, action);
+                    swapCell(emptyCellIndex, targetIndex);
+                    step++;
+                } else {
+                    clearInterval(autoInterval); // Stop the interval when all steps are completed
+                }
+            }, 500);
+        } else {
+            document.querySelector(".message").textContent = `この盤面は解けません`;
+            console.log(`BFS did not find a solution after ${searchCount} steps.`);
+        }
+    }
+
+    function breadthFirstSearch(initialState) {
+        const queue = [{ board: initialState, actions: [] }];
+        const visited = new Set([initialState.toString()]);
+        let searchCount = 0;
+
+        while (queue.length > 0) {
+            const currentNode = queue.shift(); // キューからノードを取り出す
+            const currentBoard = currentNode.board;
+
+            if (isSameBoard(currentBoard)) {
+                // 解が見つかった場合
+                return { solved: true, actions: currentNode.actions, searchCount };
+            }
+
+            const emptyIndex = currentBoard.indexOf(0);
+            const neighbors = getNeighbors(currentNode);
+
+            if (searchCount > 20000) {
+                // サーチ回数が閾値を超えた場合、解が見つからないことを示すために変更
+                return { solved: false, actions: [], searchCount };
+            }
+
+            for (const neighbor of neighbors) {
+                const neighborBoard = neighbor.board;
+                const neighborActions = [...currentNode.actions, neighbor.action];
+
+                if (!visited.has(neighborBoard.toString())) {
+                    visited.add(neighborBoard.toString());
+                    queue.push({ board: neighborBoard, actions: neighborActions });
+                }
+            }
+
+            searchCount++;
+        }
+
+        // キューが空になり、解が見つからなかった場合
+        return { solved: false, actions: [], searchCount };
+    }
+
+    function getNeighbors(node) {
+        const neighbors = [];
+        const emptyIndex = node.board.indexOf(0);
+        const edgeLength = Math.sqrt(node.board.length);
+
+        function isValidMove(i, j) {
+            return i >= 0 && i < edgeLength && j >= 0 && j < edgeLength;
+        }
+
+        const emptyI = Math.floor(emptyIndex / edgeLength);
+        const emptyJ = emptyIndex % edgeLength;
+
+        const directions = [
+            { di: -1, dj: 0 }, // 上
+            { di: 1, dj: 0 },  // 下
+            { di: 0, dj: -1 }, // 左
+            { di: 0, dj: 1 }   // 右
+        ];
+
+        for (const dir of directions) {
+            const newI = emptyI + dir.di;
+            const newJ = emptyJ + dir.dj;
+
+            if (isValidMove(newI, newJ)) {
+                const neighborBoard = [...node.board];
+                const newIndex = newI * edgeLength + newJ;
+                [neighborBoard[emptyIndex], neighborBoard[newIndex]] = [neighborBoard[newIndex], neighborBoard[emptyIndex]];
+                neighbors.push({ board: neighborBoard, action: dir });
+            }
+        }
+
+        return neighbors;
+    }
+
+    function isSameBoard(board) {
+        // 解の配置を定義
+        const solution = [1, 2, 3, 4, 5, 6, 7, 8, 0]; // 0 は空白として扱う
+
+        // ソートして比較
+        return board.join() === solution.join();
+    }
+
+    function autoSolveDFS() {
+        clearInterval(autoInterval); // 他の自動動作が実行中であれば停止
+
+        const initialState = Array.from(cells, cell => parseInt(cell.textContent) || 0);
+
+        const { solved, actions, searchCount } = depthFirstSearch(initialState);
+
+        if (solved) {
+            mode = WAIT;
+            document.querySelector(".message").textContent = "DFS 解けました!!";
+            console.log(`DFS found a solution in ${searchCount} steps.`);
+
+            let step = 0;
+
+            autoInterval = setInterval(() => {
+                if (step < actions.length) {
+                    const action = actions[step];
+                    const emptyCellIndex = Array.from(cells).findIndex(cell => cell.textContent === "");
+                    const targetIndex = getTargetIndex(emptyCellIndex, action);
+                    swapCell(emptyCellIndex, targetIndex);
+                    step++;
+                } else {
+                    clearInterval(autoInterval); // Stop the interval when all steps are completed
+                }
+            }, 500);
+        } else {
+            document.querySelector(".message").textContent = `この盤面は解けません`;
+            console.log(`DFS did not find a solution after ${searchCount} steps.`);
+        }
+    }
+
+    function depthFirstSearch(initialState) {
+        const stack = [{ board: initialState, actions: [] }];
+        const visited = new Set([initialState.toString()]);
+        let searchCount = 0;
+
+        while (stack.length > 0) {
+            const currentNode = stack.pop(); // スタックからノードを取り出す
+            const currentBoard = currentNode.board;
+
+            if (isSameBoard(currentBoard)) {
+                // 解が見つかった場合
+                return { solved: true, actions: currentNode.actions, searchCount };
+            }
+
+            const emptyIndex = currentBoard.indexOf(0);
+            const neighbors = getNeighbors(currentNode);
+
+            if (searchCount > 20000) {
+                // サーチ回数が閾値を超えた場合、解が見つからないことを示すために変更
+                return { solved: false, actions: [], searchCount };
+            }
+
+            for (const neighbor of neighbors) {
+                const neighborBoard = neighbor.board;
+                const neighborActions = [...currentNode.actions, neighbor.action];
+
+                if (!visited.has(neighborBoard.toString())) {
+                    visited.add(neighborBoard.toString());
+                    stack.push({ board: neighborBoard, actions: neighborActions });
+                }
+            }
+
+            searchCount++;
+        }
+
+        // スタックが空になり、解が見つからなかった場合
+        return { solved: false, actions: [], searchCount };
+    }
+
+    </script>
+    <title>8puzzle</title>
+</head>
+<body>
+    <div class="board">
+        <div class="cell" data-number="0" style="background-image: url('penguin-9.jpg');">1</div>
+        <div class="cell" data-number="1" style="background-image: url('penguin-8.jpg');">2</div>
+        <div class="cell" data-number="2" style="background-image: url('penguin-7.jpg');">3</div>
+        <div class="cell" data-number="3" style="background-image: url('penguin-6.jpg');">4</div>
+        <div class="cell" data-number="4" style="background-image: url('penguin-5.jpg');">5</div>
+        <div class="cell" data-number="5" style="background-image: url('penguin-4.jpg');">6</div>
+        <div class="cell" data-number="6" style="background-image: url('penguin-3.jpg');">7</div>
+        <div class="cell" data-number="7" style="background-image: url('penguin-2.jpg');">8</div>
+        <div class="cell" data-number="8" style="background-image: url('black.jpg');"></div> 
+    </div>
+    <div class="btn"><button id="btnStart">START</button></div>
+    <div class="btn"><button id="btnAuto">AUTO RANDOM</button></div>
+    <div class="btn"><button id="btnAutoAStar">AUTO AStar</button></div>
+    <div class="btn"><button id="btnAutoBFS">AUTO BFS</button></div>
+    <div class="btn"><button id="btnAutoDFS">AUTO DFS</button></div>
+    <div class="btn"><button id="btnStop">Stop</button></div>
+    <div class="btn"><button id="btnReturn">Return StartScreen</button></div>
+    <div class="message"></div>
+</body>
+</html>
