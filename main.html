@@ -39,7 +39,8 @@
             justify-content: center;
         }
 
-        #btnStart {
+        #btnStart,
+        #btnManualStart {
             font-family: 'Courier Prime', monospace;
             width: 36vh;
             padding: 1em;
@@ -67,6 +68,10 @@
             align-items: center;
             justify-content: center;
         }
+
+        .highlight {
+            border: 2px solid red;
+        }
     </style>
     <script>
         let cells = null;       // セル配列
@@ -75,8 +80,58 @@
 
         const WAIT = Symbol();  // 待機
         const GAME = Symbol();  // ゲーム中
+        let ManualFlag = false;
 
-        // セルを入れ替える
+        // ヒューリスティック値を計算する関数
+function calculateHeuristicForBoard(board) {
+    let heuristic = 0;
+    for (let i = 0; i < board.length; i++) {
+        const tile = board[i];
+        const targetPosition = (tile === 0) ? board.length - 1 : tile - 1;
+        const currentRow = Math.floor(i / 3);
+        const currentCol = i % 3;
+        const targetRow = Math.floor(targetPosition / 3);
+        const targetCol = targetPosition % 3;
+        heuristic += Math.abs(currentRow - targetRow) + Math.abs(currentCol - targetCol);
+    }
+    return heuristic;
+}
+
+// ヒューリスティック値に基づいてタイルをハイライトする関数
+function highlightBestMove() {
+    const emptyIndex = Array.from(cells).findIndex(cell => cell.textContent === "");
+    const edgeLength = Math.sqrt(cells.length);
+    const emptyI = Math.floor(emptyIndex / edgeLength);
+    const emptyJ = emptyIndex % edgeLength;
+    let minHeuristic = Infinity;
+    let bestMoveIndex = -1;
+
+    cells.forEach((cell, index) => {
+        cell.classList.remove("highlight");
+        const tileValue = parseInt(cell.textContent) || 0;
+        const currentI = Math.floor(index / edgeLength);
+        const currentJ = index % edgeLength;
+
+        // 空白セルの隣接セルのみチェック
+        if ((Math.abs(currentI - emptyI) === 1 && currentJ === emptyJ) || 
+            (Math.abs(currentJ - emptyJ) === 1 && currentI === emptyI)) {
+            let newBoard = Array.from(cells, c => parseInt(c.textContent) || 0);
+            newBoard[emptyIndex] = tileValue;
+            newBoard[index] = 0;
+            const heuristicValue = calculateHeuristicForBoard(newBoard);
+            if (heuristicValue < minHeuristic) {
+                minHeuristic = heuristicValue;
+                bestMoveIndex = index;
+            }
+        }
+    });
+
+    if (bestMoveIndex !== -1) {
+        cells[bestMoveIndex].classList.add("highlight");
+    }
+}
+
+      // セルを入れ替える
         function swapCell(x, y) {
             console.log("入れ替え.");
             [cells[x].textContent, cells[y].textContent] = [cells[y].textContent, cells[x].textContent];
@@ -85,19 +140,46 @@
             checkClear();
         }
 
+        // セルを入れ替える
+        function swapCellManual(x, y) {
+            console.log("入れ替え.");
+            [cells[x].textContent, cells[y].textContent] = [cells[y].textContent, cells[x].textContent];
+            [cells[x].style.backgroundImage, cells[y].style.backgroundImage] = [cells[y].style.backgroundImage, cells[x].style.backgroundImage];
+            // クリアしたか？
+            highlightBestMove();
+            checkClear();
+        }
+        
         // セルが入れ替え可能かチェックする
         function checkCell(number) {
+            console.log(ManualFlag)
             if (number >= 3 && cells[number - 3].textContent === "") {    // 上と入れ替え
-                swapCell(number, number - 3);
+                if (ManualFlag) {
+                    swapCellManual(number, number - 3);
+                } else {
+                    swapCell(number, number - 3);
+                }
             }
             if (number <= 5 && cells[number + 3].textContent === "") {    // 下と入れ替え
-                swapCell(number, number + 3);
+                if (ManualFlag) {
+                    swapCellManual(number, number + 3);
+                } else {
+                    swapCell(number, number + 3);
+                }
             }
             if (number % 3 !== 2 && cells[number + 1].textContent === "") {    // 右と入れ替え
-                swapCell(number, number + 1);
+                if (ManualFlag) {
+                    swapCellManual(number, number + 1);
+                } else {
+                    swapCell(number, number + 1);
+                }
             }
             if (number % 3 !== 0 && cells[number - 1].textContent === "") {    // 左と入れ替え
-                swapCell(number, number - 1);
+                if (ManualFlag) {
+                    swapCellManual(number, number - 1);
+                } else {
+                    swapCell(number, number - 1);
+                }
             }
         }
 
@@ -116,8 +198,16 @@
                     mode = WAIT;
                     document.querySelector(".message").textContent = "CLEAR!!";
                     clearInterval(autoInterval); // クリア時にAutoの動作を停止
+                    clearHighlights(); // ハイライトを消す
                 }
             }
+        }
+
+        // ハイライトをクリアする関数
+        function clearHighlights() {
+            cells.forEach(cell => {
+                cell.classList.remove("highlight");
+            });
         }
 
         // 起動時の処理
@@ -139,9 +229,11 @@
                     checkCell(number);
                 }, false);
             }
+            
 
             // スタートボタン
             const btnStart = document.getElementById("btnStart");
+            const btnManualStart = document.getElementById("btnManualStart");
             // Autoボタン
             const btnAuto = document.getElementById("btnAuto");
             // AutoAStarボタン
@@ -150,6 +242,20 @@
             const btnReturn = document.getElementById("btnReturn");
             const btnAutoBFS = document.getElementById("btnAutoBFS");
             const btnAutoDFS = document.getElementById("btnAutoDFS");
+
+            btnManualStart.addEventListener("click", () => {
+                const shuffleOption = confirm("このまま始めますか？\n「OK」で現在の盤面から、キャンセルでシャッフルして始めます。");
+                document.querySelector(".message").textContent = shuffleOption ? "現在の盤面から開始" : "シャッフルして開始";
+                // シャッフルまたは現在の盤面からゲームを開始
+                startGame(!shuffleOption);
+                ManualFlag = true;
+                console.log(ManualFlag)
+                btnReturn.style.visibility = "visible";
+                btnStart.style.visibility = "hidden";
+                btnManualStart.style.visibility = "hidden";
+                highlightBestMove();
+                checkClear();
+            }, false);
 
             btnAutoBFS.addEventListener("click", () => {
                 document.querySelector(".message").textContent = "BFS"
@@ -164,13 +270,16 @@
             btnReturn.addEventListener("click", () => {
                 document.querySelector(".message").textContent = ""
                 btnStart.style.visibility = "visible";
+                btnManualStart.style.visibility = "visible";
                 btnAuto.style.visibility = "hidden";
                 btnAutoAStar.style.visibility = "hidden";
                 btnStop.style.visibility = "hidden";
                 btnReturn.style.visibility = "hidden";
                 btnAutoDFS.style.visibility = "hidden";
                 btnAutoBFS.style.visibility = "hidden";
+                ManualFlag = false;
                 clearInterval(autoInterval);
+                clearHighlights(); // ハイライトを消す
             });
 
             btnStop.addEventListener("click", () => {
@@ -195,19 +304,19 @@
             });
         
             btnStart.addEventListener("click", () => {
-                const shuffleOption = confirm("シャッフルしますか？\n「OK」でシャッフル、キャンセルで現在の盤面から始めます。");
-
-                document.querySelector(".message").textContent = shuffleOption ? "シャッフル開始" : "現在の盤面から開始";
-
+                const shuffleOption = confirm("このまま始めますか？\n「OK」で現在の盤面から、キャンセルでシャッフルして始めます。");
+                document.querySelector(".message").textContent = shuffleOption ? "現在の盤面から開始" : "シャッフルして開始";
                 // シャッフルまたは現在の盤面からゲームを開始
-                startGame(shuffleOption);
+                startGame(!shuffleOption);
                 btnStart.style.visibility = "hidden";
+                btnManualStart.style.visibility = "hidden";
                 btnAuto.style.visibility = "visible";
                 btnAutoAStar.style.visibility = "visible";
                 btnStop.style.visibility = "visible";
                 btnReturn.style.visibility = "visible";
                 btnAutoBFS.style.visibility = "visible";
                 btnAutoDFS.style.visibility = "visible";
+                checkClear();
             }, false);
         });
 
@@ -394,7 +503,7 @@
 
             if (solved) {
                 mode = WAIT;
-                document.querySelector(".message").textContent = "A* 解けました!!";
+                document.querySelector(".message").textContent = `A* ${searchCount}手で解けました!!`;
                 console.log(`A* found a solution in ${searchCount} steps.`);
 
                 let step = 0;
@@ -426,7 +535,7 @@
 
         if (solved) {
             mode = WAIT;
-            document.querySelector(".message").textContent = "BFS 解けました!!";
+            document.querySelector(".message").textContent = `BFS ${searchCount}手で解けました!!`;
             console.log(`BFS found a solution in ${searchCount} steps.`);
 
             let step = 0;
@@ -538,7 +647,7 @@
 
         if (solved) {
             mode = WAIT;
-            document.querySelector(".message").textContent = "DFS 解けました!!";
+            document.querySelector(".message").textContent = `DFS ${searchCount}手で解けました!!`;
             console.log(`DFS found a solution in ${searchCount} steps.`);
 
             let step = 0;
@@ -577,7 +686,7 @@
             const emptyIndex = currentBoard.indexOf(0);
             const neighbors = getNeighbors(currentNode);
 
-            if (searchCount > 20000) {
+            if (searchCount > 30000) {
                 // サーチ回数が閾値を超えた場合、解が見つからないことを示すために変更
                 return { solved: false, actions: [], searchCount };
             }
@@ -612,15 +721,16 @@
         <div class="cell" data-number="5" style="background-image: url('penguin-4.jpg');">6</div>
         <div class="cell" data-number="6" style="background-image: url('penguin-3.jpg');">7</div>
         <div class="cell" data-number="7" style="background-image: url('penguin-2.jpg');">8</div>
-        <div class="cell" data-number="8" style="background-image: url('black.jpg');"></div> 
+        <div class="cell" data-number="8" style="background-image: url('black.jpg');"></div>
     </div>
-    <div class="btn"><button id="btnStart">START</button></div>
-    <div class="btn"><button id="btnAuto">AUTO RANDOM</button></div>
-    <div class="btn"><button id="btnAutoAStar">AUTO AStar</button></div>
-    <div class="btn"><button id="btnAutoBFS">AUTO BFS</button></div>
-    <div class="btn"><button id="btnAutoDFS">AUTO DFS</button></div>
-    <div class="btn"><button id="btnStop">Stop</button></div>
+    <div class="btn"><button id="btnStart">AUTO START</button></div>
+    <div class="btn"><button id="btnManualStart">Manual START</button></div>
     <div class="btn"><button id="btnReturn">Return StartScreen</button></div>
+    <div class="btn"><button id="btnAuto">RANDOM</button></div>
+    <div class="btn"><button id="btnAutoAStar">AStar</button></div>
+    <div class="btn"><button id="btnAutoBFS">BFS</button></div>
+    <div class="btn"><button id="btnAutoDFS">DFS</button></div>
+    <div class="btn"><button id="btnStop">Stop</button></div>
     <div class="message"></div>
 </body>
 </html>
